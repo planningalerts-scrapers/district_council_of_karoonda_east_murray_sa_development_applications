@@ -549,7 +549,7 @@ function parseAddress(houseNumber: string, streetName: string, suburbName: strin
 
             // Check whether the street name is actually a hundred name such as "BARUNGA HD".
 
-            if (streetName.endsWith(" HD") || streetName.endsWith(" HUNDRED")) {  // very likely a hundred name
+            if (streetName.endsWith(" HD") || streetName.toUpperCase().endsWith(" HUNDRED")) {  // very likely a hundred name
                 let hundredNameMatch = didYouMean(streetName.slice(0, -3), HundredNames, { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 0, trimSpaces: true });
                 if (hundredNameMatch === null)
                     candidate.hasInvalidHundredName = true;  // remember that there is an invalid hundred name (for example, "BARUNGA View HD")
