@@ -60,7 +60,7 @@ async function insertRow(database, developmentApplication) {
                 console.error(error);
                 reject(error);
             } else {
-                console.log(`    Saved: application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" into the database.`);
+                console.log(`    Saved application \"${developmentApplication.applicationNumber}\" with address \"${developmentApplication.address}\", description \"${developmentApplication.description}\", legal description \"${developmentApplication.legalDescription}\" and received date \"${developmentApplication.receivedDate}\" to the database.`);
                 sqlStatement.finalize();  // releases any locks
                 resolve(row);
             }
@@ -211,17 +211,17 @@ function findElement(elements: Element[], text: string, shouldSelectRightmostEle
 }
 
 // Finds the start element of each development application on the current PDF page (there are
-// typically two development applications on a single page and each development application
-// typically begins with the text "Application No").
+// typically one or two development applications on a single page and each development application
+// typically begins with the text "Application No" or "Application Number").
 
-function findStartElements(elements: Element[]) {
-    // Examine all the elements on the page that being with "A" or "a".
-    
+function findStartElements(findText: string, elements: Element[]) {
+    // Examine all the elements on the page that begin with the same letter as the FindText.
+
     let startElements: Element[] = [];
-    for (let element of elements.filter(element => element.text.trim().toLowerCase().startsWith("a"))) {
+    for (let element of elements.filter(element => element.text.replace(/[^A-Za-z0-9\s]/g, "").toLowerCase().startsWith(findText.charAt(0).toLowerCase()))) {
         // Extract up to 5 elements to the right of the element that has text starting with the
-        // letter "a" (and so may be the start of the "Application No" text).  Join together the
-        // elements to the right in an attempt to find the best match to the text "Application No".
+        // first letter of the FindText (and so may be the start of the FindText).  Join together
+        // the elements to the right in an attempt to find the best match to the FindText.
 
         let rightElement = element;
         let rightElements: Element[] = [];
@@ -230,30 +230,28 @@ function findStartElements(elements: Element[]) {
         do {
             rightElements.push(rightElement);
         
-            // Allow for common misspellings of the "no." text.
+            // Allow for common miscellaneous characters such as " ", "." and "-".
 
-            let text = rightElements.map(element => element.text).join("").replace(/[\s,\-_]/g, "").replace(/n0/g, "no").replace(/n°/g, "no").replace(/"o/g, "no").replace(/"0/g, "no").replace(/"°/g, "no").replace(/“°/g, "no").toLowerCase();
-            if (text.length >= 16)  // stop once the text is too long
+            let text = rightElements.map(element => element.text).join("").replace(/[^A-Za-z0-9\s]/g, "").toLowerCase();
+            if (text.length > findText.length + 2)  // stop once the text is too long
                 break;
-            if (text.length >= 13) {  // ignore until the text is close to long enough
-                if (text === "applicationno")
+            if (text.length >= findText.length - 2) {  // ignore until the text is close to long enough
+                if (text === findText.toLowerCase())
                     matches.push({ element: rightElement, threshold: 0, text: text });
-                else if (didYouMean(text, [ "ApplicationNo" ], { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true }) !== null)
+                else if (didYouMean(text, [ findText ], { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true }) !== null)
                     matches.push({ element: rightElement, threshold: 1, text: text });
-                else if (didYouMean(text, [ "ApplicationNo" ], { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 2, trimSpaces: true }) !== null)
-                    matches.push({ element: rightElement, threshold: 2, text: text });
             }
 
             rightElement = getRightElement(elements, rightElement);
         } while (rightElement !== undefined && rightElements.length < 5);  // up to 5 elements
 
-        // Chose the best match (if any matches were found).
+        // Choose the best match (if any matches were found).
 
         if (matches.length > 0) {
             let bestMatch = matches.reduce((previous, current) =>
                 (previous === undefined ||
                 current.threshold < previous.threshold ||
-                (current.threshold === previous.threshold && Math.abs(current.text.trim().length - "ApplicationNo".length) < Math.abs(previous.text.trim().length - "ApplicationNo".length)) ? current : previous), undefined);
+                (current.threshold === previous.threshold && Math.abs(current.text.trim().length - findText.length) < Math.abs(previous.text.trim().length - findText.length)) ? current : previous), undefined);
             startElements.push(bestMatch.element);
         }
     }
@@ -397,7 +395,7 @@ function getDownText(elements: Element[], topText: string, leftText: string, rig
 
 // Constructs the full address string based on the specified address components.
 
-function formatAddress(houseNumber: string, streetName: string, suburbName: string) {
+function oldFormatAddress(houseNumber: string, streetName: string, suburbName: string) {
     suburbName = suburbName.replace(/^HD /, "").replace(/ HD$/, "").replace(/ SA$/, "").trim();
     suburbName = SuburbNames[suburbName.toUpperCase()] || suburbName;
     let separator = ((houseNumber !== "" || streetName !== "") && suburbName !== "") ? ", " : "";
@@ -407,7 +405,7 @@ function formatAddress(houseNumber: string, streetName: string, suburbName: stri
 // Parses the address from the house number, street name and suburb name.  Note that these
 // address components may actually contain multiple addresses (delimited by "ü" characters).
 
-function parseAddress(houseNumber: string, streetName: string, suburbName: string) {
+function oldParseAddress(houseNumber: string, streetName: string, suburbName: string) {
     // Two or more addresses are sometimes recorded in the same field.  This is done in a way
     // which is ambiguous (ie. it is not possible to reconstruct the original addresses perfectly).
     //
@@ -438,7 +436,7 @@ function parseAddress(houseNumber: string, streetName: string, suburbName: strin
     // to the second address (this was deduced by examining actual existing street names).
 
     if (!houseNumber.includes("ü"))
-        return formatAddress(houseNumber, streetName, suburbName);
+        return oldFormatAddress(houseNumber, streetName, suburbName);
 
     // Split the house number on the "ü" character.
 
@@ -589,7 +587,7 @@ function parseAddress(houseNumber: string, streetName: string, suburbName: strin
     // Format and return the "best" address.
 
     let address = addresses[0];
-    return formatAddress(address.houseNumber, address.streetName, address.suburbName);
+    return oldFormatAddress(address.houseNumber, address.streetName, address.suburbName);
 }
     
 // Returns a number indicating which address is "larger" (in this case "larger" means a "worse"
@@ -654,7 +652,7 @@ function addressComparer(a, b) {
 
 // Parses the details from the elements associated with a single development application.
 
-function parseApplicationElements(elements: Element[], startElement: Element, informationUrl: string) {
+function oldParseApplicationElements(elements: Element[], startElement: Element, informationUrl: string) {
     // Get the application number.
 
     let applicationNumber = getRightText(elements, "Application No", "Application Date", "Applicants Name");
@@ -708,9 +706,8 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         return undefined;
     }
 
-    let address = parseAddress(houseNumber, streetName, suburbName);
-    if (address === undefined)
-    {
+    let address = oldParseAddress(houseNumber, streetName, suburbName);
+    if (address === undefined) {
         let elementSummary = elements.map(element => `[${element.text}]`).join("");
         console.log(`Application number ${applicationNumber} will be ignored because an address was not parsed from the house number \"${houseNumber}\", street name \"${streetName}\" and suburb name \"${suburbName}\".  Elements: ${elementSummary}`);
         return undefined;
@@ -757,6 +754,203 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         scrapeDate: moment().format("YYYY-MM-DD"),
         receivedDate: (receivedDate !== undefined && receivedDate.isValid()) ? receivedDate.format("YYYY-MM-DD") : "",
         legalDescription: legalDescription
+    };
+}
+
+// Formats (and corrects) an address.
+
+function newFormatAddress(applicationNumber: string, address: string) {
+    address = address.trim().replace(/[-–]+$/, "").replace(/\s\s+/g, " ").trim();  // remove trailing dashes and multiple white space characters
+    if (address.replace(/[\s,0-]/g, "") === "" || address.startsWith("No Residential Address"))  // ignores addresses such as "0 0, 0" and "-"
+        return "";
+
+    // Remove the comma in house numbers larger than 1000.  For example, the following addresses:
+    //
+    //     4,665 Princes HWY MENINGIE 5264
+    //     11,287 Princes HWY SALT CREEK 5264
+    //
+    // would be converted to the following:
+    //
+    //     4665 Princes HWY MENINGIE 5264
+    //     11287 Princes HWY SALT CREEK 5264
+
+    if (/^\d,\d\d\d/.test(address))
+        address = address.substring(0, 1) + address.substring(2);
+    else if (/^\d\d,\d\d\d/.test(address))
+        address = address.substring(0, 2) + address.substring(3);
+
+    let tokens = address.split(" ");
+
+    let postCode = undefined;
+    let token = tokens.pop();
+    if (token === undefined)
+        return address;
+    if (/^\d\d\d\d$/.test(token))
+        postCode = token;
+    else
+        tokens.push(token);
+
+    // Ensure that a state code is added before the post code if a state code is not present.
+
+    let state = "SA";
+    token = tokens.pop();
+    if (token === undefined)
+        return address;
+    if ([ "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA" ].includes(token.toUpperCase()))
+        state = token.toUpperCase();
+    else
+        tokens.push(token);
+
+    // Construct a fallback address to be used if the suburb name cannot be determined later.
+
+    let fallbackAddress = (postCode === undefined) ? address : [ ...tokens, state, postCode].join(" ").trim();
+
+    // Pop tokens from the end of the array until a valid suburb name is encountered (allowing
+    // for a few spelling errors).  Note that this starts by examining for longer matches
+    // (consisting of four tokens) before examining shorter matches.  This approach ensures
+    // that the following address:
+    //
+    //     2,800 Woods Well RD COLEBATCH 5266
+    //
+    // is correctly converted to the following address:
+    //
+    //     2800 WOODS WELL ROAD, COLEBATCH SA 5266
+    //
+    // rather than (incorrectly) to the following address (notice that the street name has "BELL"
+    // instead of "WELL" because there actually is a street named "BELL ROAD").
+    //
+    //     2800 Woods BELL ROAD, COLEBATCH SA 5266
+
+    let suburbName = undefined;
+    for (let index = 4; index >= 1; index--) {
+        let trySuburbName = tokens.slice(-index).join(" ");
+        let suburbNameMatch = <string>didYouMean(trySuburbName, Object.keys(SuburbNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+        if (suburbNameMatch !== null) {
+            suburbName = SuburbNames[suburbNameMatch];
+            tokens.splice(-index, index);  // remove elements from the end of the array           
+            break;
+        }
+    }
+
+    // Expand any street suffix (for example, this converts "ST" to "STREET").
+
+    token = tokens.pop();
+    if (token !== undefined) {
+        token = token.trim().replace(/,+$/, "").trim();  // removes trailing commas
+        let streetSuffix = StreetSuffixes[token.toUpperCase()];
+        if (streetSuffix === undefined)
+            streetSuffix = Object.values(StreetSuffixes).find(streetSuffix => streetSuffix === token.toUpperCase());  // the street suffix is already expanded
+        if (streetSuffix === undefined)
+            tokens.push(token);  // unrecognised street suffix
+        else
+            tokens.push(streetSuffix);  // add back the expanded street suffix
+    }
+
+    // Pop tokens from the end of the array until a valid street name is encountered (allowing
+    // for a few spelling errors).  Similar to the examination of suburb names, this examines
+    // longer matches before examining shorter matches (for the same reason).
+
+    let streetName = undefined;
+    for (let index = 5; index >= 1; index--) {
+        let tryStreetName = tokens.slice(-index).join(" ").trim().replace(/,+$/, "").trim();  // allows for commas after the street name
+        let streetNameMatch = <string>didYouMean(tryStreetName, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+        if (streetNameMatch !== null) {
+            streetName = streetNameMatch;
+            let suburbNames = StreetNames[streetNameMatch];
+            tokens.splice(-index, index);  // remove elements from the end of the array           
+
+            // If the suburb was not determined earlier then attempt to obtain the suburb based
+            // on the street (ie. if there is only one suburb associated with the street).  For
+            // example, this would automatically add the suburb to "22 Jefferson CT 5263",
+            // producing the address "22 JEFFERSON COURT, WELLINGTON EAST SA 5263".
+
+            if (suburbName === undefined && suburbNames.length === 1)
+                suburbName = SuburbNames[suburbNames[0]];
+
+            break;
+        }
+    }
+
+    // If a post code was included in the original address then use it to override the post code
+    // included in the suburb name (because the post code in the original address is more likely
+    // to be correct).
+
+    if (postCode !== undefined && suburbName !== undefined)
+        suburbName = suburbName.replace(/\s+\d\d\d\d$/, " " + postCode);
+
+    // Do not allow an address that does not have a suburb name.
+
+    if (suburbName === undefined) {
+        console.log(`Ignoring the development application "${applicationNumber}" because a suburb name could not be determined for the address: ${address}`);
+        return "";
+    }
+
+    // Reconstruct the address with a comma between the street address and the suburb.
+
+    if (suburbName === undefined || suburbName.trim() === "")
+        address = fallbackAddress;
+    else {
+        if (streetName !== undefined && streetName.trim() !== "")
+            tokens.push(streetName);
+        let streetAddress = tokens.join(" ").trim().replace(/,+$/, "").trim();  // removes trailing commas
+        address = streetAddress + (streetAddress === "" ? "" : ", ") + suburbName;
+    }
+
+    // Ensure that the address includes the state "SA".
+
+    if (address !== "" && !/\bSA\b/g.test(address))
+        address += " SA";
+
+    return address;
+}
+
+// Parses the details from the elements associated with a single development application.
+
+function newParseApplicationElements(elements: Element[], startElement: Element, informationUrl: string) {
+    // Get the application number.
+
+    let applicationNumber = getRightText(elements, "Application Number", "Application Date", "Assessment Number");
+    if (applicationNumber === undefined || applicationNumber === "") {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Could not find the application number on the PDF page for the current development application.  The development application will be ignored.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+    applicationNumber = applicationNumber.replace(/[Il,]/g, "/");
+    console.log(`    Found \"${applicationNumber}\".`);
+
+    // Get the received date.
+
+    let receivedDateText = getRightText(elements, "Application Date", "Development Completed", "Planning Lodged");
+    let receivedDate: moment.Moment = undefined;
+    if (receivedDateText !== undefined)
+        receivedDate = moment(receivedDateText.trim(), [ "D/MM/YYYY", "D/MM/YY" ], true);
+
+    // Get the house number, street and suburb of the address.
+
+    let address = getRightText(elements, "Property Address", "Application Fees", "Development Description");
+    if (address !== undefined)
+        address = newFormatAddress(applicationNumber, address.replace(/\bAustralia$/gi, "").trim());
+    if (address === undefined || address === "") {
+        let elementSummary = elements.map(element => `[${element.text}]`).join("");
+        console.log(`Application number ${applicationNumber} will be ignored because an address was not found.  Elements: ${elementSummary}`);
+        return undefined;
+    }
+
+    // Get the description.
+
+    let description = getRightText(elements, "Development Description", "Application Fees", "Relevant Authority");
+
+    // Construct the resulting application information.
+    
+    return {
+        applicationNumber: applicationNumber,
+        address: address,
+        description: ((description !== undefined && description.trim() !== "") ? description : "No Description Provided"),
+        informationUrl: informationUrl,
+        commentUrl: CommentUrl,
+        scrapeDate: moment().format("YYYY-MM-DD"),
+        receivedDate: (receivedDate !== undefined && receivedDate.isValid()) ? receivedDate.format("YYYY-MM-DD") : "",
+        legalDescription: ""
     };
 }
 
@@ -811,14 +1005,18 @@ async function parsePdf(url: string) {
         let elementComparer = (a, b) => (a.y > b.y) ? 1 : ((a.y < b.y) ? -1 : ((a.x > b.x) ? 1 : ((a.x < b.x) ? -1 : 0)));
         elements.sort(elementComparer);
 
-        // Group the elements into sections based on where the "Application No" text starts.
+        // Group the elements into sections based on where the application number text starts.
 
         let applicationElementGroups = [];
-        let startElements = findStartElements(elements);
+        let startElements = findStartElements("ApplicationNo", elements);
+        if (startElements.length === 0)
+            startElements = findStartElements("ApplicationNumber", elements);
+
         for (let index = 0; index < startElements.length; index++) {
             // Determine the highest Y co-ordinate of this row and the next row (or the bottom of
             // the current page).  Allow some leeway vertically (add some extra height) because
-            // in some cases the lodged date might be higher up than the "Application No" text.
+            // in some cases the lodged date might be higher up than the "Application No" or
+            // "Application Number" text.
             
             let startElement = startElements[index];
             let raisedStartElement: Element = {
@@ -843,7 +1041,11 @@ async function parsePdf(url: string) {
         // instead of being ignored).
 
         for (let applicationElementGroup of applicationElementGroups) {
-            let developmentApplication = parseApplicationElements(applicationElementGroup.elements, applicationElementGroup.startElement, url);
+            let developmentApplication;
+            if (applicationElementGroup.startElement.text.toLowerCase().trim() === "application no")
+                developmentApplication = oldParseApplicationElements(applicationElementGroup.elements, applicationElementGroup.startElement, url);
+            else
+                developmentApplication = newParseApplicationElements(applicationElementGroup.elements, applicationElementGroup.startElement, url);
             if (developmentApplication !== undefined) {
                 let suffix = 0;
                 let applicationNumber = developmentApplication.applicationNumber;
@@ -914,7 +1116,7 @@ async function main() {
     let pdfUrls: string[] = [];
     for (let element of $("div.uFileItem p a").get()) {
         let pdfUrl = new urlparser.URL(element.attribs.href, DevelopmentApplicationsUrl).href
-        if (pdfUrl.toLowerCase().includes("register") && pdfUrl.toLowerCase().includes(".pdf"))
+        if (pdfUrl.toLowerCase().includes("register") && !pdfUrl.toLowerCase().includes("members") && pdfUrl.toLowerCase().includes(".pdf"))
             if (!pdfUrls.some(url => url === pdfUrl))
                 pdfUrls.push(pdfUrl);
     }
@@ -933,7 +1135,7 @@ async function main() {
     // process).
 
     let selectedPdfUrls: string[] = [];
-    selectedPdfUrls.push(pdfUrls.pop());
+    selectedPdfUrls.push(pdfUrls.shift());
     if (pdfUrls.length > 0)
         selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);
     if (getRandom(0, 2) === 0)
@@ -950,7 +1152,7 @@ async function main() {
         if (global.gc)
             global.gc();
 
-        console.log(`Inserting development applications into the database.`);
+        console.log(`Saving development applications to the database.`);
         for (let developmentApplication of developmentApplications)
             await insertRow(database, developmentApplication);
     }
