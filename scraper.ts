@@ -17,7 +17,7 @@ import didYouMean, * as didyoumean from "didyoumean2";
 
 sqlite3.verbose();
 
-const DevelopmentApplicationsUrl = "https://www.dckem.sa.gov.au/page.aspx?u=494";
+const DevelopmentApplicationsUrl = "https://www.dckem.sa.gov.au/documents/registers";
 const CommentUrl = "mailto:council@dckem.sa.gov.au";
 
 declare const process: any;
@@ -1120,7 +1120,7 @@ async function main() {
             if (!pdfUrls.some(url => url === pdfUrl))
                 pdfUrls.push(pdfUrl);
     }
-
+    
     // Always parse the most recent PDF file and randomly select one other PDF file to parse.
 
     if (pdfUrls.length === 0) {
