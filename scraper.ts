@@ -1120,7 +1120,7 @@ async function main() {
             if (!pdfUrls.some(url => url === pdfUrl))
                 pdfUrls.push(pdfUrl);
     }
-
+    
     // Always parse the most recent PDF file and randomly select one other PDF file to parse.
 
     if (pdfUrls.length === 0) {
